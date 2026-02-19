@@ -1,147 +1,190 @@
 <?php
-// projects.php
-// ที่อยู่ไฟล์: /projects.php
+// projects.php - ทะเบียนโครงการพร้อมช่องค้นหาเดิมและเพิ่มระบบลบโครงการ
 require_once 'auth_check.php';
 require_once 'config/db.php';
+require_once 'includes/functions.php';
 
-// ระบบค้นหาข้อมูล
-$search = isset($_GET['search']) ? $conn->real_escape_string($_GET['search']) : '';
-$where = "";
+// รายชื่ออำเภอสำหรับตัวกรอง
+$sisaket_districts = [
+    "เมืองศรีสะเกษ", "ยางชุมน้อย", "กันทรารมย์", "กันทรลักษณ์", "ขุขันธ์", "ไพรบึง", "ปรางค์กู่", "ขุนหาญ", 
+    "ราษีไศล", "อุทุมพรพิสัย", "บึงบูรพ์", "ห้วยทับทัน", "โนนคูณ", "ศรีรัตนะ", "น้ำเกลี้ยง", "วังหิน", 
+    "ภูสิงห์", "เมืองจันทร์", "เบญจลักษณ์", "พยุห์", "โพธิ์ศรีสุวรรณ", "ศิลาลาด"
+];
+
+// 1. รับค่าจากตัวกรอง
+$search = $_GET['search'] ?? '';
+$f_district = $_GET['district'] ?? '';
+$f_status = $_GET['status'] ?? '';
+
+// 2. สร้าง Query พร้อมตัวกรอง
+$query_parts = ["1=1"];
+$params = [];
+$types = "";
+
 if ($search) {
-    $where = "WHERE p.project_name LIKE '%$search%' OR p.fiscal_year LIKE '%$search%'";
+    $query_parts[] = "(p.project_name LIKE ? OR p.route_name LIKE ?)";
+    $search_param = "%$search%";
+    $params[] = $search_param; $params[] = $search_param;
+    $types .= "ss";
+}
+if ($f_district) {
+    $query_parts[] = "p.district_name = ?";
+    $params[] = $f_district;
+    $types .= "s";
+}
+if ($f_status) {
+    $query_parts[] = "p.status = ?";
+    $params[] = $f_status;
+    $types .= "s";
 }
 
-// ดึงข้อมูลโครงการพร้อมชื่อผู้บันทึก
+$where_sql = implode(" AND ", $query_parts);
 $sql = "SELECT p.*, u.full_name as creator_name 
         FROM projects p 
         LEFT JOIN users u ON p.created_by = u.id 
-        $where 
+        WHERE $where_sql 
         ORDER BY p.fiscal_year DESC, p.id DESC";
-$result = $conn->query($sql);
+
+$stmt = $conn->prepare($sql);
+if ($params) { $stmt->bind_param($types, ...$params); }
+$stmt->execute();
+$result = $stmt->get_result();
+
+// คำนวณสรุปผล
+$total_budget = 0;
+$total_area = 0;
+$project_count = $result->num_rows;
+$projects_list = [];
+while($row = $result->fetch_assoc()) {
+    $total_budget += $row['budget_amount'];
+    $total_area += $row['area'];
+    $projects_list[] = $row;
+}
 
 include 'includes/header.php';
 ?>
 
-<div class="space-y-6 animate-in fade-in pb-20">
-    <!-- ส่วนหัวหน้าจอ: ชื่อหน้าและกลุ่มปุ่มดำเนินการ -->
-    <div class="flex flex-col xl:flex-row gap-4 items-start xl:items-center justify-between">
+<div class="space-y-6 animate-in fade-in duration-500 pb-20">
+    <!-- Header -->
+    <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
         <div>
-            <h2 class="text-2xl font-black text-slate-800">ทะเบียนโครงการทั้งหมด</h2>
-            <p class="text-slate-500 text-sm font-medium">จัดการและตรวจสอบฐานข้อมูลโครงสร้างพื้นฐาน</p>
+            <h2 class="text-3xl font-black text-slate-800 tracking-tight uppercase">ทะเบียนโครงการพัฒนา</h2>
+            <p class="text-slate-500 font-medium text-sm italic">จัดการฐานข้อมูลโครงสร้างพื้นฐาน อบจ.ศรีสะเกษ</p>
         </div>
-        
-        <div class="flex flex-wrap gap-3 w-full xl:w-auto">
-            <!-- ปุ่มเพิ่มโครงการใหม่ (เพิ่มเข้ามาเพื่อให้เข้าถึงง่าย) -->
-            <a href="add_project.php" class="bg-orange-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-orange-700 transition-all shadow-lg shadow-orange-100">
-                <i data-lucide="plus-circle" size="18"></i>
-                <span class="whitespace-nowrap">เพิ่มโครงการใหม่</span>
+        <div class="flex gap-2 w-full lg:w-auto">
+            <a href="add_project.php" class="flex-1 lg:flex-none bg-orange-600 text-white px-8 py-3 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-slate-900 transition-all shadow-xl">
+                <i data-lucide="plus-circle" size="18"></i> เพิ่มโครงการ
             </a>
-
-            <!-- ปุ่มส่งออก Excel (CSV) -->
-            <a href="export_projects.php" class="bg-emerald-600 text-white px-6 py-3 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-100">
-                <i data-lucide="file-spreadsheet" size="18"></i>
-                <span class="whitespace-nowrap">ส่งออก Excel</span>
-            </a>
-            
-            <!-- ฟอร์มค้นหา -->
-            <form method="GET" class="relative flex-1 md:w-64">
-                <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size="18"></i>
-                <input type="text" name="search" value="<?= htmlspecialchars($search) ?>" 
-                       class="w-full pl-12 pr-4 py-3 bg-white border-2 border-slate-100 rounded-2xl outline-none focus:border-orange-500 transition-all shadow-sm" 
-                       placeholder="ค้นหาโครงการ...">
-            </form>
         </div>
     </div>
 
-    <!-- รายการโครงการ (Cards) -->
-    <div class="grid grid-cols-1 gap-6">
-        <?php if ($result && $result->num_rows > 0): ?>
-            <?php while($row = $result->fetch_assoc()): 
-                $p_id = $row['id'];
-                $pts_res = $conn->query("SELECT village FROM project_points WHERE project_id = $p_id ORDER BY order_index ASC");
-                $villages = [];
-                while($pt = $pts_res->fetch_assoc()) $villages[] = htmlspecialchars($pt['village']);
-                $route_name = !empty($villages) ? implode(" - ", $villages) : "ไม่ระบุสายทาง";
+    <!-- Summary Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="bg-slate-900 p-6 rounded-[2rem] text-white shadow-lg">
+            <p class="text-[9px] font-black text-orange-500 uppercase tracking-widest mb-1">ผลการค้นหา</p>
+            <h4 class="text-2xl font-black"><?= number_format($project_count) ?> <span class="text-xs">โครงการ</span></h4>
+        </div>
+        <div class="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+            <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">งบประมาณรวม (ที่แสดง)</p>
+            <h4 class="text-2xl font-black text-slate-800"><?= number_format($total_budget, 2) ?> <span class="text-xs">฿</span></h4>
+        </div>
+        <div class="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+            <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">พื้นที่ดำเนินการรวม</p>
+            <h4 class="text-2xl font-black text-blue-600"><?= number_format($total_area, 2) ?> <span class="text-xs">ตร.ม.</span></h4>
+        </div>
+    </div>
+
+    <!-- Filter Bar (คืนค่าเดิม) -->
+    <div class="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
+        <form method="GET" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <input type="text" name="search" value="<?= e($search) ?>" placeholder="ค้นชื่อโครงการหรือสายทาง..." 
+                   class="w-full p-3.5 bg-slate-50 border-2 border-transparent rounded-xl outline-none focus:border-orange-500 transition-all font-bold text-sm">
+            
+            <select name="district" class="p-3.5 bg-slate-50 border-2 border-transparent rounded-xl outline-none focus:border-orange-500 font-bold text-slate-600 text-sm">
+                <option value="">ทุกอำเภอ</option>
+                <?php foreach($sisaket_districts as $d): ?>
+                    <option value="<?= $d ?>" <?= $f_district == $d ? 'selected' : '' ?>><?= $d ?></option>
+                <?php endforeach; ?>
+            </select>
+
+            <select name="status" class="p-3.5 bg-slate-50 border-2 border-transparent rounded-xl outline-none focus:border-orange-500 font-bold text-slate-600 text-sm">
+                <option value="">ทุกสถานะ</option>
+                <option value="รอดำเนินการ" <?= $f_status == 'รอดำเนินการ' ? 'selected' : '' ?>>รอดำเนินการ</option>
+                <option value="กำลังดำเนินการ" <?= $f_status == 'กำลังดำเนินการ' ? 'selected' : '' ?>>กำลังดำเนินการ</option>
+                <option value="เสร็จสิ้น" <?= $f_status == 'เสร็จสิ้น' ? 'selected' : '' ?>>เสร็จสิ้น</option>
+                <option value="มีการเปลี่ยนแปลงหรือแก้ไข" <?= $f_status == 'มีการเปลี่ยนแปลงหรือแก้ไข' ? 'selected' : '' ?>>แก้ไข/เปลี่ยนแปลง</option>
+            </select>
+
+            <button type="submit" class="bg-slate-900 text-white rounded-xl font-black hover:bg-orange-600 transition-all text-sm uppercase tracking-widest">
+                ค้นหาข้อมูล
+            </button>
+        </form>
+    </div>
+
+    <!-- Project List -->
+    <div class="space-y-4">
+        <?php if ($project_count > 0): ?>
+            <?php foreach($projects_list as $row): 
+                $status_config = [
+                    'รอดำเนินการ' => ['color' => 'slate', 'icon' => 'clock'],
+                    'กำลังดำเนินการ' => ['color' => 'orange', 'icon' => 'play-circle'],
+                    'เสร็จสิ้น' => ['color' => 'emerald', 'icon' => 'check-circle-2'],
+                    'มีการเปลี่ยนแปลงหรือแก้ไข' => ['color' => 'rose', 'icon' => 'alert-circle']
+                ];
+                $cfg = $status_config[$row['status']] ?? $status_config['รอดำเนินการ'];
             ?>
-            <div class="bg-white rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden hover:border-orange-400 transition-all group">
-                <div class="flex flex-col md:flex-row">
-                    <div class="bg-slate-900 text-white p-8 md:w-64 flex flex-col justify-between shrink-0">
-                        <div>
-                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">ปีงบประมาณ</p>
-                            <p class="text-3xl font-black"><?= $row['fiscal_year'] ?></p>
+            <div class="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100 hover:shadow-xl transition-all group overflow-hidden relative">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                    <div class="flex items-start gap-5 flex-1 overflow-hidden">
+                        <div class="w-14 h-14 rounded-2xl bg-<?= $cfg['color'] ?>-50 text-<?= $cfg['color'] ?>-600 flex items-center justify-center shrink-0 border border-<?= $cfg['color'] ?>-100">
+                            <i data-lucide="<?= $cfg['icon'] ?>" size="28"></i>
                         </div>
-                        <div class="mt-6">
-                            <p class="text-xs font-bold text-slate-400 uppercase">พื้นที่รวม</p>
-                            <p class="text-xl font-bold"><?= number_format($row['area'], 2) ?> ตร.ม.</p>
+                        <div class="overflow-hidden">
+                            <div class="flex items-center gap-2 mb-1">
+                                <span class="text-[9px] font-black uppercase bg-slate-100 px-2 py-0.5 rounded text-slate-500">ปี <?= $row['fiscal_year'] ?></span>
+                                <span class="text-[9px] font-black uppercase text-<?= $cfg['color'] ?>-600 bg-<?= $cfg['color'] ?>-50 px-2 py-0.5 rounded"><?= e($row['status']) ?></span>
+                            </div>
+                            <h3 class="text-lg font-black text-slate-800 truncate group-hover:text-orange-600 transition-colors"><?= e($row['project_name']) ?></h3>
+                            <p class="text-xs text-slate-400 font-bold mt-0.5 flex items-center gap-2">
+                                <i data-lucide="map-pin" size="12"></i> 
+                                <span>อ.<?= e($row['district_name']) ?></span>
+                                <span class="text-slate-200">|</span>
+                                <span class="truncate"><?= e($row['route_name'] ?: 'ไม่ระบุสายทาง') ?></span>
+                            </p>
                         </div>
                     </div>
                     
-                    <div class="p-8 flex-1 bg-white">
-                        <div class="flex justify-between items-start mb-6">
-                            <div>
-                                <h3 class="text-xl font-black text-slate-800 group-hover:text-orange-600 transition-colors"><?= htmlspecialchars($row['project_name']) ?></h3>
-                                <div class="flex items-center gap-2 text-slate-400 font-bold mt-1 text-xs">
-                                    <i data-lucide="map-pinned" size="14" class="text-blue-500"></i>
-                                    สายทาง: <span class="text-slate-600"><?= $route_name ?></span>
-                                </div>
-                            </div>
-                            <span class="bg-orange-50 text-orange-700 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest">
-                                <?= htmlspecialchars($row['status']) ?>
-                            </span>
+                    <div class="flex flex-row md:flex-col items-center md:items-end justify-between w-full md:w-auto gap-4 pt-4 md:pt-0 border-t md:border-t-0 border-slate-50">
+                        <div class="text-left md:text-right">
+                            <p class="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">งบประมาณโครงการ</p>
+                            <p class="text-xl font-black text-slate-900"><?= number_format($row['budget_amount'], 2) ?> ฿</p>
                         </div>
-
-                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                            <div class="bg-slate-50 p-4 rounded-2xl border border-slate-50">
-                                <p class="text-[10px] text-slate-400 font-black uppercase mb-1">ระยะทาง</p>
-                                <p class="font-black text-slate-700"><?= number_format($row['distance']) ?> ม.</p>
-                            </div>
-                            <div class="bg-slate-50 p-4 rounded-2xl border border-slate-50">
-                                <p class="text-[10px] text-slate-400 font-black uppercase mb-1">งบประมาณ</p>
-                                <p class="font-black text-orange-600"><?= number_format($row['budget_amount'], 2) ?> ฿</p>
-                            </div>
-                            <div class="bg-slate-50 p-4 rounded-2xl border border-slate-50">
-                                <p class="text-[10px] text-slate-400 font-black uppercase mb-1">ความกว้าง</p>
-                                <p class="font-black text-slate-700"><?= $row['width'] ?> ม.</p>
-                            </div>
-                            <div class="bg-slate-50 p-4 rounded-2xl border border-slate-50">
-                                <p class="text-[10px] text-slate-400 font-black uppercase mb-1">ผู้บันทึก</p>
-                                <p class="font-bold text-slate-700 truncate"><?= htmlspecialchars($row['creator_name'] ?: 'System') ?></p>
-                            </div>
-                        </div>
-
-                        <div class="flex flex-wrap gap-2 pt-4 border-t border-slate-50">
-                            <a href="view_project.php?id=<?= $row['id'] ?>" class="bg-orange-600 text-white px-6 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 hover:bg-orange-700 shadow-lg transition-all">
-                                <i data-lucide="eye" size="14"></i> ดูข้อมูล
+                        <div class="flex gap-2">
+                            <a href="view_project.php?id=<?= $row['id'] ?>" class="p-3 bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white rounded-xl transition-all shadow-sm">
+                                <i data-lucide="eye" size="18"></i>
                             </a>
-                            <a href="edit_project.php?id=<?= $row['id'] ?>" class="bg-white border-2 border-slate-100 text-slate-700 px-6 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 hover:bg-slate-50 transition-all">
-                                <i data-lucide="edit-3" size="14"></i> แก้ไข
+                            <a href="edit_project.php?id=<?= $row['id'] ?>" class="p-3 bg-slate-50 text-slate-400 hover:bg-orange-600 hover:text-white rounded-xl transition-all shadow-sm">
+                                <i data-lucide="edit-3" size="18"></i>
                             </a>
-                            <button onclick="confirmDelete(<?= $row['id'] ?>)" class="ml-auto bg-red-50 text-red-600 p-2.5 rounded-xl hover:bg-red-600 hover:text-white transition-all shadow-sm">
+                            <?php if($_SESSION['role'] === 'admin'): ?>
+                            <a href="delete_project.php?id=<?= $row['id'] ?>" 
+                               onclick="return confirm('คุณแน่ใจหรือไม่ที่จะลบโครงการนี้? ข้อมูลพิกัดและไฟล์แนบจะถูกลบออกถาวร')"
+                               class="p-3 bg-slate-50 text-slate-400 hover:bg-rose-600 hover:text-white rounded-xl transition-all shadow-sm">
                                 <i data-lucide="trash-2" size="18"></i>
-                            </button>
+                            </a>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
             </div>
-            <?php endwhile; ?>
+            <?php endforeach; ?>
         <?php else: ?>
-            <div class="text-center py-24 bg-white rounded-[3rem] border-2 border-dashed border-slate-100">
-                <i data-lucide="database-zap" class="mx-auto text-slate-200 mb-4" size="64"></i>
-                <p class="text-slate-400 font-bold uppercase tracking-widest">ไม่พบข้อมูลโครงการในระบบ</p>
-                <a href="add_project.php" class="inline-flex items-center gap-2 mt-6 bg-orange-600 text-white px-8 py-4 rounded-[2rem] font-bold hover:shadow-xl transition-all">
-                    <i data-lucide="plus-circle"></i> คลิกเพื่อเพิ่มโครงการใหม่
-                </a>
+            <div class="text-center py-20 bg-white rounded-[3rem] border-2 border-dashed border-slate-100">
+                <i data-lucide="folder-search" class="mx-auto text-slate-200 mb-4" size="64"></i>
+                <p class="text-slate-400 font-bold uppercase tracking-widest text-sm">ไม่พบข้อมูลโครงการตามเงื่อนไขที่ระบุ</p>
             </div>
         <?php endif; ?>
     </div>
 </div>
-
-<script>
-function confirmDelete(id) {
-    if(confirm('คุณต้องการลบโครงการนี้และข้อมูลพิกัดทั้งหมดใช่หรือไม่?')) {
-        window.location.href = 'delete_project.php?id=' + id;
-    }
-}
-</script>
 
 <?php include 'includes/footer.php'; ?>

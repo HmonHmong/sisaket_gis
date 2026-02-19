@@ -1,25 +1,23 @@
 <?php
 // config/db.php
-// ที่อยู่ไฟล์: /config/db.php
+// ปรับปรุงการเชื่อมต่อฐานข้อมูลโดยนำฟังก์ชัน e() ออกเพื่อป้องกันการประกาศซ้ำ
+mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 $host = "localhost";
 $user = "root";
 $pass = "";
 $dbname = "sisaket_gis";
 
-// เชื่อมต่อด้วย MySQLi
-$conn = new mysqli($host, $user, $pass, $dbname);
-
-// ตรวจสอบการเชื่อมต่อ
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
+try {
+    $conn = new mysqli($host, $user, $pass, $dbname);
+    $conn->set_charset("utf8mb4");
+} catch (mysqli_sql_exception $e) {
+    die("ขออภัย: ไม่สามารถเชื่อมต่อฐานข้อมูลได้ในขณะนี้");
 }
 
-// ตั้งค่าชุดตัวอักษรเป็น utf8mb4
-$conn->set_charset("utf8mb4");
-
-// เริ่มต้น Session สำหรับระบบสมาชิก
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
+
+// ลบฟังก์ชัน e() ออกจากที่นี่แล้ว เพราะไปเก็บไว้ใน includes/functions.php แทน
 ?>
