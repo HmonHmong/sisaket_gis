@@ -1,5 +1,5 @@
 <?php
-// login.php - ระบบเข้าสู่ระบบฉบับปรับปรุงความปลอดภัยและดีไซน์ระดับองค์กร
+// login.php - ระบบเข้าสู่ระบบฉบับปรับปรุงความปลอดภัยและดีไซน์ระดับองค์กร (พร้อมปุ่ม Open Data)
 require_once 'config/db.php';
 
 // หากมีการล็อกอินค้างไว้แล้ว ให้ส่งไปหน้าแรกทันที
@@ -52,6 +52,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>เข้าสู่ระบบ | GIS สำนักช่าง อบจ.ศรีสะเกษ</title>
+    
+    <!-- PWA Tags -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#ea580c">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/854/854878.png">
+    
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
@@ -130,6 +136,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     <i data-lucide="arrow-right" size="20" class="group-hover:translate-x-1 transition-transform"></i>
                 </button>
 
+                <!-- เพิ่มปุ่มสำหรับประชาชน (Open Data) -->
+                <div class="pt-6 mt-4 border-t border-slate-100">
+                    <a href="public_map.php" class="w-full bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold py-4 rounded-2xl transition-all text-sm flex items-center justify-center gap-2 group border border-emerald-200 shadow-sm">
+                        <i data-lucide="map" size="18" class="group-hover:scale-110 transition-transform"></i>
+                        <span>สำหรับประชาชน: ดูแผนที่โครงการ (Open Data)</span>
+                    </a>
+                </div>
+
                 <div class="pt-6 border-t border-slate-50 text-center">
                     <p class="text-slate-400 text-[9px] font-black uppercase tracking-widest leading-relaxed">
                         กองช่าง องค์การบริหารส่วนจังหวัดศรีสะเกษ<br>
@@ -143,6 +157,15 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <script>
         // เริ่มต้นไอคอน Lucide
         lucide.createIcons();
+
+        // PWA: ลงทะเบียน Service Worker 
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').catch(err => {
+                    console.log('ServiceWorker registration failed: ', err);
+                });
+            });
+        }
     </script>
 </body>
 </html>

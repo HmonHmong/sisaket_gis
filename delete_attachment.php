@@ -1,45 +1,48 @@
 <?php
-// delete_attachment.php - ลบไฟล์โครงการอย่างปลอดภัย (รวมถึงลบไฟล์จริงในเครื่อง)
+// delete_attachment.php - ระบบ API สำหรับลบไฟล์รูปภาพ/PDF (ทำงานเบื้องหลัง)
 require_once 'auth_check.php';
 require_once 'config/db.php';
+require_once 'includes/functions.php';
 
+// บังคับให้ตอบกลับเป็นรูปแบบ JSON
 header('Content-Type: application/json');
 
+// เช็คสิทธิ์ว่ามีสิทธิ์ลบหรือไม่ (เฉพาะ Admin และ Staff)
 if ($_SESSION['role'] !== 'admin' && $_SESSION['role'] !== 'staff') {
-    echo json_encode(['success' => false, 'error' => 'No permission']);
+    echo json_encode(['success' => false, 'error' => 'ไม่มีสิทธิ์ในการดำเนินการ']);
     exit;
 }
 
 if (isset($_GET['id'])) {
     $id = intval($_GET['id']);
     
-    // 1. ค้นหาข้อมูลไฟล์ก่อนลบ
-    $stmt = $conn->prepare("SELECT file_path FROM project_attachments WHERE id = ?");
+    // ค้นหาข้อมูลไฟล์จากฐานข้อมูล
+    $stmt = $conn->prepare("SELECT file_path, project_id, file_name FROM project_attachments WHERE id = ?");
     $stmt->bind_param("i", $id);
     $stmt->execute();
-    $file = $stmt->get_result()->fetch_assoc();
+    $res = $stmt->get_result();
 
-    if ($file) {
-        $full_path = 'uploads/projects/' . $file['file_path'];
+    if ($res->num_rows > 0) {
+        $file = $res->fetch_assoc();
+        $path = 'uploads/projects/' . $file['file_path'];
         
-        // 2. ลบไฟล์จริงในเครื่อง (ถ้ามี)
-        if (file_exists($full_path)) {
-            unlink($full_path);
+        // 1. ลบไฟล์จริงออกจากโฟลเดอร์เซิร์ฟเวอร์
+        if (file_exists($path)) {
+            @unlink($path);
         }
-
-        // 3. ลบข้อมูลในฐานข้อมูล
-        $del = $conn->prepare("DELETE FROM project_attachments WHERE id = ?");
-        $del->bind_param("i", $id);
         
-        if ($del->execute()) {
-            echo json_encode(['success' => true]);
-        } else {
-            echo json_encode(['success' => false, 'error' => 'Database error']);
-        }
-    } else {
-        echo json_encode(['success' => false, 'error' => 'File not found']);
+        // 2. ลบข้อมูลออกจากฐานข้อมูล
+        $del_stmt = $conn->prepare("DELETE FROM project_attachments WHERE id = ?");
+        $del_stmt->bind_param("i", $id);
+        $del_stmt->execute();
+        
+        // 3. บันทึกประวัติกิจกรรม
+        log_activity($conn, 'DELETE', 'project', $file['project_id'], "ลบไฟล์แนบ: " . $file['file_name']);
+        
+        echo json_encode(['success' => true]);
+        exit;
     }
-} else {
-    echo json_encode(['success' => false, 'error' => 'Invalid ID']);
 }
-exit;
+
+echo json_encode(['success' => false, 'error' => 'ไม่พบไฟล์ที่ต้องการลบ']);
+?>
